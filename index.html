@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestionnaire de Projets</title>
+  <title>Gantt Project</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Supabase JS Client -->
@@ -17,11 +17,11 @@
   <!-- EN-TÊTE -->
   <header class="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap justify-between items-center shadow-sm gap-4">
     <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2">
-      📋 <span>Mon Application de Projets</span>
+      📊 <span>Gantt Project</span>
     </h1>
     
     <div class="flex items-center gap-3">
-      <select id="project-select" onchange="onProjectChange()" class="border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none">
+      <select id="project-select" onchange="onProjectChange()" class="border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none min-w-[200px]">
         <option value="">Chargement des projets...</option>
       </select>
       <button onclick="openProjectModal()" class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
@@ -49,7 +49,6 @@
 
     <!-- VUE KANBAN -->
     <div id="view-kanban" class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <!-- Colonne À FAIRE -->
       <div class="bg-slate-200/60 p-4 rounded-xl border border-slate-200">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-xs font-bold uppercase tracking-wider text-slate-600">À faire</h2>
@@ -58,7 +57,6 @@
         <div id="col-todo" class="space-y-3 min-h-[150px]"></div>
       </div>
 
-      <!-- Colonne EN COURS -->
       <div class="bg-blue-50 p-4 rounded-xl border border-blue-200">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-xs font-bold uppercase tracking-wider text-blue-800">En cours</h2>
@@ -67,7 +65,6 @@
         <div id="col-doing" class="space-y-3 min-h-[150px]"></div>
       </div>
 
-      <!-- Colonne TERMINÉ -->
       <div class="bg-green-50 p-4 rounded-xl border border-green-200">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-xs font-bold uppercase tracking-wider text-green-800">Terminé</h2>
@@ -182,7 +179,6 @@
     </div>
   </div>
 
-  <!-- Chargement du fichier de configuration puis du script principal -->
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>

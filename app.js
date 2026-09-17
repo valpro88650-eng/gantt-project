@@ -41,9 +41,12 @@ async function loadProjects() {
   projects.forEach(p => {
     const opt = document.createElement('option');
     opt.value = p.id;
-    opt.textContent = p.nom;
+    opt.textContent = p.nom || p.name || 'Projet sans nom';
     select.appendChild(opt);
   });
+
+  // Sélectionne le premier projet de la liste par défaut
+  select.value = projects[0].id;
 
   loadTasks();
 }

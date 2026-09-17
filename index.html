@@ -3,146 +3,185 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestion de Projets</title>
+  <title>Gestionnaire de Projets</title>
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Supabase JS Client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Frappe Gantt -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.css">
   <script src="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
 </head>
-<body class="bg-gray-100 text-gray-800 font-sans">
+<body class="bg-slate-100 text-slate-800 min-h-screen font-sans">
 
   <!-- EN-TÊTE -->
-  <header class="bg-white shadow p-4 flex justify-between items-center">
-    <h1 class="text-xl font-bold text-gray-800">📋 Mon Projet en un Coup d'Œil</h1>
-    <div class="flex items-center space-x-2">
-      <select id="project-select" onchange="loadTasks()" class="border p-2 rounded bg-gray-50">
-        <option value="">Chargement...</option>
+  <header class="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap justify-between items-center shadow-sm gap-4">
+    <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+      📋 <span>Mon Application de Projets</span>
+    </h1>
+    
+    <div class="flex items-center gap-3">
+      <select id="project-select" onchange="onProjectChange()" class="border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none">
+        <option value="">Chargement des projets...</option>
       </select>
-      <button onclick="openProjectModal()" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700 text-sm font-semibold">+ Nouveau projet</button>
+      <button onclick="openProjectModal()" class="bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+        + Nouveau projet
+      </button>
+      <button onclick="openTaskModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+        + Nouvelle tâche
+      </button>
     </div>
   </header>
 
-  <div class="max-w-7xl mx-auto mt-6 px-4">
-    <!-- ONGLETS -->
-    <div class="flex border-b border-gray-300 mb-6">
-      <button onclick="switchTab('list')" id="tab-list" class="py-2 px-4 font-semibold text-blue-600 border-b-2 border-blue-600">📋 Liste</button>
-      <button onclick="switchTab('kanban')" id="tab-kanban" class="py-2 px-4 font-semibold text-gray-500 hover:text-blue-600">📊 Kanban</button>
-      <button onclick="switchTab('gantt')" id="tab-gantt" class="py-2 px-4 font-semibold text-gray-500 hover:text-blue-600">📅 Diagramme de Gantt</button>
+  <!-- NAVIGATION TABS -->
+  <main class="max-w-7xl mx-auto px-6 py-6">
+    <div class="border-b border-slate-200 mb-6 flex gap-4">
+      <button id="tab-kanban-btn" onclick="switchTab('kanban')" class="pb-3 text-sm font-semibold border-b-2 border-blue-600 text-blue-600">
+        📊 Vue Kanban
+      </button>
+      <button id="tab-list-btn" onclick="switchTab('list')" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800">
+        📋 Vue Liste
+      </button>
+      <button id="tab-gantt-btn" onclick="switchTab('gantt')" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800">
+        📅 Diagramme de Gantt
+      </button>
+    </div>
+
+    <!-- VUE KANBAN -->
+    <div id="view-kanban" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- Colonne À FAIRE -->
+      <div class="bg-slate-200/60 p-4 rounded-xl border border-slate-200">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-600">À faire</h2>
+          <span id="count-todo" class="bg-white text-slate-600 text-xs px-2 py-0.5 rounded-full font-bold">0</span>
+        </div>
+        <div id="col-todo" class="space-y-3 min-h-[150px]"></div>
+      </div>
+
+      <!-- Colonne EN COURS -->
+      <div class="bg-blue-50 p-4 rounded-xl border border-blue-200">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-blue-800">En cours</h2>
+          <span id="count-doing" class="bg-white text-blue-800 text-xs px-2 py-0.5 rounded-full font-bold">0</span>
+        </div>
+        <div id="col-doing" class="space-y-3 min-h-[150px]"></div>
+      </div>
+
+      <!-- Colonne TERMINÉ -->
+      <div class="bg-green-50 p-4 rounded-xl border border-green-200">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-green-800">Terminé</h2>
+          <span id="count-done" class="bg-white text-green-800 text-xs px-2 py-0.5 rounded-full font-bold">0</span>
+        </div>
+        <div id="col-done" class="space-y-3 min-h-[150px]"></div>
+      </div>
     </div>
 
     <!-- VUE LISTE -->
-    <div id="view-list" class="space-y-4">
-      <div class="flex justify-between items-center bg-white p-4 rounded shadow">
-        <h2 class="text-lg font-bold">Tâches du projet</h2>
-        <button onclick="openModal()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">+ Nouvelle tâche</button>
-      </div>
-      <div class="bg-white rounded shadow overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-gray-50 border-b">
-              <th class="p-3">Tâche</th>
-              <th class="p-3">Responsable</th>
-              <th class="p-3">Début</th>
-              <th class="p-3">Fin</th>
-              <th class="p-3">Statut</th>
-              <th class="p-3">Avancement</th>
-              <th class="p-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="task-list-body"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- VUE KANBAN (DRAG & DROP) -->
-    <div id="view-kanban" class="hidden grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div class="bg-gray-200 p-4 rounded shadow" ondragover="allowDrop(event)" ondrop="drop(event, 'À faire')">
-        <h3 class="font-bold text-gray-700 mb-3">À faire</h3>
-        <div id="kanban-todo" class="space-y-2 min-h-[200px]"></div>
-      </div>
-      <div class="bg-blue-100 p-4 rounded shadow" ondragover="allowDrop(event)" ondrop="drop(event, 'En cours')">
-        <h3 class="font-bold text-blue-800 mb-3">En cours</h3>
-        <div id="kanban-doing" class="space-y-2 min-h-[200px]"></div>
-      </div>
-      <div class="bg-green-100 p-4 rounded shadow" ondragover="allowDrop(event)" ondrop="drop(event, 'Terminé')">
-        <h3 class="font-bold text-green-800 mb-3">Terminé</h3>
-        <div id="kanban-done" class="space-y-2 min-h-[200px]"></div>
-      </div>
+    <div id="view-list" class="hidden bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <table class="w-full text-left border-collapse text-sm">
+        <thead>
+          <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+            <th class="p-4">Nom de la tâche</th>
+            <th class="p-4">Responsable</th>
+            <th class="p-4">Dates</th>
+            <th class="p-4">Statut</th>
+            <th class="p-4">Avancement</th>
+            <th class="p-4 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="list-table-body" class="divide-y divide-slate-100"></tbody>
+      </table>
     </div>
 
     <!-- VUE GANTT -->
-    <div id="view-gantt" class="hidden bg-white p-4 rounded shadow overflow-x-auto">
-      <svg id="gantt-target"></svg>
+    <div id="view-gantt" class="hidden bg-white p-6 rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+      <div id="gantt-container">
+        <svg id="gantt-svg"></svg>
+      </div>
     </div>
-  </div>
+  </main>
 
-  <!-- MODALE CRÉATION DE PROJET -->
-  <div id="modal-project" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-    <div class="bg-white rounded-lg p-6 max-w-sm w-full shadow-lg">
-      <h3 class="text-lg font-bold mb-4">Nouveau projet</h3>
+  <!-- MODALE NOUVEAU PROJET -->
+  <div id="modal-project" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+      <h2 class="text-lg font-bold text-slate-900 mb-4">Créer un nouveau projet</h2>
       <form onsubmit="saveProject(event)" class="space-y-4">
         <div>
-          <label class="block text-sm font-medium mb-1">Nom du projet</label>
-          <input type="text" id="project-name" required placeholder="Ex: Sculptures 2027" class="w-full border p-2 rounded">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Nom du projet</label>
+          <input type="text" id="project-name" required class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
         </div>
-        <div class="flex justify-end space-x-2 pt-2">
-          <button type="button" onclick="closeProjectModal()" class="px-4 py-2 border rounded">Annuler</button>
-          <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Créer</button>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" onclick="closeProjectModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition">Annuler</button>
+          <button type="submit" class="px-4 py-2 text-sm font-semibold bg-green-600 text-white hover:bg-green-700 rounded-lg transition">Enregistrer</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- MODALE CRÉATION / ÉDITION DE TÂCHE -->
-  <div id="modal-task" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-    <div class="bg-white rounded-lg p-6 max-w-md w-full shadow-lg">
-      <h3 id="modal-title" class="text-lg font-bold mb-4">Nouvelle tâche</h3>
-      <form id="task-form" onsubmit="saveTask(event)" class="space-y-3">
+  <!-- MODALE CRÉATION / ÉDITION TÂCHE -->
+  <div id="modal-task" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+      <h2 id="modal-title" class="text-lg font-bold text-slate-900 mb-4">Nouvelle tâche</h2>
+      <form id="task-form" onsubmit="saveTask(event)" class="space-y-4">
         <input type="hidden" id="task-id">
+
         <div>
-          <label class="block text-sm font-medium">Nom de la tâche</label>
-          <input type="text" id="task-name" required class="w-full border p-2 rounded">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Nom de la tâche *</label>
+          <input type="text" id="task-name" required class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
         </div>
+
         <div>
-          <label class="block text-sm font-medium">Responsable</label>
-          <input type="text" id="task-assignee" class="w-full border p-2 rounded">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Tâche parente (Sous-tâche de...)</label>
+          <select id="task-parent" class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+            <option value="">Aucune (Tâche principale)</option>
+          </select>
         </div>
-        <div class="grid grid-cols-2 gap-2">
+
+        <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium">Date début</label>
-            <input type="date" id="task-start" required class="border p-2 rounded w-full">
+            <label class="block text-sm font-medium text-slate-700 mb-1">Responsable</label>
+            <input type="text" id="task-assignee" class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: Valérie">
           </div>
           <div>
-            <label class="block text-sm font-medium">Date fin</label>
-            <input type="date" id="task-end" required class="border p-2 rounded w-full">
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-sm font-medium">Statut</label>
-            <select id="task-status" class="w-full border p-2 rounded">
+            <label class="block text-sm font-medium text-slate-700 mb-1">Statut</label>
+            <select id="task-status" class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
               <option value="À faire">À faire</option>
               <option value="En cours">En cours</option>
               <option value="Terminé">Terminé</option>
             </select>
           </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium">Avancement (%)</label>
-            <input type="number" id="task-progress" min="0" max="100" value="0" class="w-full border p-2 rounded">
+            <label class="block text-sm font-medium text-slate-700 mb-1">Date de début</label>
+            <input type="date" id="task-start" required class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Date de fin</label>
+            <input type="date" id="task-end" required class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
           </div>
         </div>
-        <div class="flex justify-between items-center pt-4">
-          <button type="button" id="btn-delete" onclick="deleteTask()" class="px-3 py-2 bg-red-100 text-red-600 rounded hover:bg-red-200 hidden">Supprimer</button>
-          <div class="flex space-x-2 ml-auto">
-            <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded">Annuler</button>
-            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Enregistrer</button>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Avancement (%)</label>
+          <input type="number" id="task-progress" min="0" max="100" value="0" class="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+        </div>
+
+        <div class="flex justify-between items-center pt-4 border-t border-slate-100">
+          <button type="button" id="btn-delete" onclick="deleteTask()" class="px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 rounded-lg transition hidden">
+            Supprimer
+          </button>
+          <div class="flex gap-2 ml-auto">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition">Annuler</button>
+            <button type="submit" class="px-4 py-2 text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition">Enregistrer</button>
           </div>
         </div>
       </form>
     </div>
   </div>
 
-  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,22 +1,58 @@
-let currentTasks = [];
+// CONFIGURATION SUPABASE
+const SUPABASE_URL = 'https://TON-PROJET.supabase.co'; 
+const SUPABASE_KEY = 'TA-CLE-ANON-PUBLIQUE';
 
-async function init() {
-  const { data: projets } = await supabaseClient.from('projets').select('*');
+// Initialisation du client Supabase
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ÉTAT GLOBAL DE L'APPLICATION
+let currentTasks = [];
+let currentTab = 'kanban';
+
+// INITIALISATION AU CHARGEMENT DE LA PAGE
+document.addEventListener('DOMContentLoaded', () => {
+  loadProjects();
+});
+
+// --- GESTION DES PROJETS ---
+
+async function loadProjects() {
   const select = document.getElementById('project-select');
   
-  if (projets && projets.length > 0) {
-    select.innerHTML = projets.map(p => `<option value="${p.id}">${p.nom}</option>`).join('');
-    loadTasks();
-  } else {
-    select.innerHTML = `<option value="">Aucun projet disponible</option>`;
-    currentTasks = [];
-    renderList();
-    renderKanban();
-    renderGantt();
+  const { data: projects, error } = await supabaseClient
+    .from('projets')
+    .select('*')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error("Erreur chargement projets :", error);
+    select.innerHTML = '<option value="">Erreur de chargement</option>';
+    return;
   }
+
+  select.innerHTML = '';
+
+  if (!projects || projects.length === 0) {
+    select.innerHTML = '<option value="">Aucun projet — Cliquez sur + Nouveau</option>';
+    currentTasks = [];
+    renderAllViews();
+    return;
+  }
+
+  projects.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.nom;
+    select.appendChild(opt);
+  });
+
+  loadTasks();
 }
 
-// GESTION DES PROJETS
+function onProjectChange() {
+  loadTasks();
+}
+
 function openProjectModal() {
   document.getElementById('project-name').value = '';
   document.getElementById('modal-project').classList.remove('hidden');
@@ -28,16 +64,19 @@ function closeProjectModal() {
 
 async function saveProject(e) {
   e.preventDefault();
-  const nom = document.getElementById('project-name').value.trim();
-  if (!nom) return;
+  const nameInput = document.getElementById('project-name').value.trim();
+  if (!nameInput) return;
 
-  const { data, error } = await supabaseClient.from('projets').insert([{ nom }]).select();
+  const { data, error } = await supabaseClient
+    .from('projets')
+    .insert([{ nom: nameInput }])
+    .select();
 
   if (error) {
     alert("Erreur lors de la création du projet : " + error.message);
   } else {
     closeProjectModal();
-    await init();
+    await loadProjects();
     if (data && data.length > 0) {
       document.getElementById('project-select').value = data[0].id;
       loadTasks();
@@ -45,154 +84,256 @@ async function saveProject(e) {
   }
 }
 
-// GESTION DES TÂCHES
+// --- GESTION DES TÂCHES ---
+
 async function loadTasks() {
   const projectId = document.getElementById('project-select').value;
   if (!projectId) {
     currentTasks = [];
-    renderList();
-    renderKanban();
-    renderGantt();
+    renderAllViews();
     return;
   }
 
-  const { data: taches } = await supabaseClient.from('taches').select('*').eq('projet_id', projectId);
-  currentTasks = taches || [];
+  const { data: tasks, error } = await supabaseClient
+    .from('taches')
+    .select('*')
+    .eq('projet_id', projectId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error("Erreur chargement tâches :", error);
+    alert("Erreur lors du chargement des tâches.");
+    return;
+  }
+
+  currentTasks = tasks || [];
+  renderAllViews();
+}
+
+// ROUTEUR D'AFFICHAGE
+function renderAllViews() {
+  renderKanbanView();
+  renderListView();
+  renderGanttView();
+}
+
+// NAVIGATION ENTRE VUES
+function switchTab(tab) {
+  currentTab = tab;
   
-  renderList();
-  renderKanban();
-  renderGantt();
+  const views = ['kanban', 'list', 'gantt'];
+  views.forEach(v => {
+    const el = document.getElementById(`view-${v}`);
+    const btn = document.getElementById(`tab-${v}-btn`);
+    if (v === tab) {
+      el.classList.remove('hidden');
+      btn.className = "pb-3 text-sm font-semibold border-b-2 border-blue-600 text-blue-600";
+    } else {
+      el.classList.add('hidden');
+      btn.className = "pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800";
+    }
+  });
+
+  if (tab === 'gantt') {
+    renderGanttView();
+  }
 }
 
-function renderList() {
-  const body = document.getElementById('task-list-body');
+// --- VUE KANBAN ---
+
+function renderKanbanView() {
+  const colTodo = document.getElementById('col-todo');
+  const colDoing = document.getElementById('col-doing');
+  const colDone = document.getElementById('col-done');
+
+  colTodo.innerHTML = '';
+  colDoing.innerHTML = '';
+  colDone.innerHTML = '';
+
+  let countTodo = 0, countDoing = 0, countDone = 0;
+
+  currentTasks.forEach(task => {
+    const parentTask = currentTasks.find(t => t.id === task.parent_id);
+    const parentLabel = parentTask 
+      ? `<div class="text-[10px] font-semibold text-blue-600 mb-1 bg-blue-50 px-1.5 py-0.5 rounded inline-block">↳ ${parentTask.nom}</div>` 
+      : '';
+
+    const card = document.createElement('div');
+    card.className = "bg-white p-3 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition cursor-pointer";
+    card.onclick = () => openTaskModal(task.id);
+    
+    card.innerHTML = `
+      ${parentLabel}
+      <div class="font-semibold text-sm text-slate-800 mb-1">${task.nom}</div>
+      <div class="text-xs text-slate-500 flex justify-between items-center mb-2">
+        <span>👤 ${task.responsable || 'Non assigné'}</span>
+        <span>📅 ${formatDate(task.date_fin)}</span>
+      </div>
+      <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+        <div class="bg-blue-600 h-1.5 rounded-full" style="width: ${task.avancement || 0}%"></div>
+      </div>
+    `;
+
+    if (task.statut === 'En cours') {
+      colDoing.appendChild(card);
+      countDoing++;
+    } else if (task.statut === 'Terminé') {
+      colDone.appendChild(card);
+      countDone++;
+    } else {
+      colTodo.appendChild(card);
+      countTodo++;
+    }
+  });
+
+  document.getElementById('count-todo').textContent = countTodo;
+  document.getElementById('count-doing').textContent = countDoing;
+  document.getElementById('count-done').textContent = countDone;
+}
+
+// --- VUE LISTE ---
+
+function renderListView() {
+  const tbody = document.getElementById('list-table-body');
+  tbody.innerHTML = '';
+
   if (currentTasks.length === 0) {
-    body.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-gray-500">Aucune tâche enregistrée.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">Aucune tâche enregistrée</td></tr>`;
     return;
   }
-  body.innerHTML = currentTasks.map(t => `
-    <tr class="border-b hover:bg-gray-50">
-      <td class="p-3 font-medium">${t.nom}</td>
-      <td class="p-3">${t.responsable || '-'}</td>
-      <td class="p-3 text-sm">${t.date_debut}</td>
-      <td class="p-3 text-sm">${t.date_fin}</td>
-      <td class="p-3"><span class="px-2 py-1 text-xs rounded bg-gray-200">${t.statut}</span></td>
-      <td class="p-3 font-semibold">${t.avancement}%</td>
-      <td class="p-3 text-right">
-        <button onclick="openModal('${t.id}')" class="text-blue-600 hover:underline mr-2">✏️ Éditer</button>
+
+  currentTasks.forEach(task => {
+    const parentTask = currentTasks.find(t => t.id === task.parent_id);
+    const parentInfo = parentTask ? `<span class="text-xs text-slate-400 block">Sous-tâche de : ${parentTask.nom}</span>` : '';
+
+    const tr = document.createElement('tr');
+    tr.className = "hover:bg-slate-50 transition";
+    tr.innerHTML = `
+      <td class="p-4 font-medium text-slate-900">
+        ${task.nom}
+        ${parentInfo}
       </td>
-    </tr>
-  `).join('');
-}
-
-function renderKanban() {
-  document.getElementById('kanban-todo').innerHTML = renderCards(currentTasks.filter(t => t.statut === 'À faire'));
-  document.getElementById('kanban-doing').innerHTML = renderCards(currentTasks.filter(t => t.statut === 'En cours'));
-  document.getElementById('kanban-done').innerHTML = renderCards(currentTasks.filter(t => t.statut === 'Terminé'));
-}
-
-function renderCards(tasks) {
-  if (tasks.length === 0) return `<div class="text-xs text-gray-400 p-2">Aucune tâche</div>`;
-  return tasks.map(t => `
-    <div draggable="true" ondragstart="drag(event, '${t.id}')" class="bg-white p-3 rounded shadow text-sm border-l-4 border-blue-500 cursor-move hover:shadow-md transition">
-      <div class="flex justify-between items-start">
-        <div class="font-bold">${t.nom}</div>
-        <button onclick="openModal('${t.id}')" class="text-xs text-gray-400 hover:text-blue-600">✏️</button>
-      </div>
-      <div class="text-xs text-gray-500 mt-1">👤 ${t.responsable || 'Non assigné'}</div>
-      <div class="text-xs text-gray-400 mt-1">📅 ${t.date_debut} → ${t.date_fin}</div>
-    </div>
-  `).join('');
-}
-
-function renderGantt() {
-  const target = document.getElementById('gantt-target');
-  target.innerHTML = '';
-  if (currentTasks.length === 0) return;
-
-  const tasksFormatted = currentTasks.map(t => ({
-    id: t.id,
-    name: t.nom,
-    start: t.date_debut,
-    end: t.date_fin,
-    progress: t.avancement
-  }));
-
-  new Gantt("#gantt-target", tasksFormatted, {
-    language: 'fr',
-    header_height: 50,
-    column_width: 30,
-    step: 24,
-    view_modes: ['Day', 'Week', 'Month'],
-    bar_height: 20,
-    padding: 18
+      <td class="p-4 text-slate-600">${task.responsable || '-'}</td>
+      <td class="p-4 text-slate-600 text-xs">${formatDate(task.date_debut)} → ${formatDate(task.date_fin)}</td>
+      <td class="p-4">
+        <span class="px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeClass(task.statut)}">
+          ${task.statut}
+        </span>
+      </td>
+      <td class="p-4">
+        <div class="flex items-center gap-2">
+          <div class="w-20 bg-slate-200 rounded-full h-2 overflow-hidden">
+            <div class="bg-blue-600 h-2 rounded-full" style="width: ${task.avancement || 0}%"></div>
+          </div>
+          <span class="text-xs text-slate-500 font-semibold">${task.avancement || 0}%</span>
+        </div>
+      </td>
+      <td class="p-4 text-right">
+        <button onclick="openTaskModal('${task.id}')" class="text-blue-600 hover:text-blue-800 text-xs font-semibold">Modifier</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
   });
 }
 
-// DRAG & DROP LOGIC
-function allowDrop(ev) { ev.preventDefault(); }
-function drag(ev, id) { ev.dataTransfer.setData("taskId", id); }
+// --- VUE GANTT ---
 
-async function drop(ev, newStatus) {
-  ev.preventDefault();
-  const id = ev.dataTransfer.getData("taskId");
-  if (!id) return;
+let ganttInstance = null;
 
-  const { error } = await supabaseClient.from('taches').update({ statut: newStatus }).eq('id', id);
-  if (!error) {
-    loadTasks();
-  } else {
-    alert("Erreur de déplacement : " + error.message);
+function renderGanttView() {
+  const svg = document.getElementById('gantt-svg');
+  svg.innerHTML = '';
+
+  if (currentTasks.length === 0) {
+    return;
+  }
+
+  const formattedTasks = currentTasks.map(t => ({
+    id: t.id,
+    name: t.nom,
+    start: t.date_debut || new Date().toISOString().split('T')[0],
+    end: t.date_fin || new Date().toISOString().split('T')[0],
+    progress: t.avancement || 0,
+    dependencies: t.parent_id ? t.parent_id : ""
+  }));
+
+  try {
+    ganttInstance = new Gantt("#gantt-svg", formattedTasks, {
+      language: 'fr',
+      view_mode: 'Day',
+      on_click: (task) => openTaskModal(task.id)
+    });
+  } catch (err) {
+    console.error("Erreur de rendu Gantt :", err);
   }
 }
 
-// MODALE TÂCHE (CRÉATION / ÉDITION)
-function openModal(taskId = null) {
+// --- MODALE TÂCHE ---
+
+function openTaskModal(taskId = null) {
   const projectId = document.getElementById('project-select').value;
   if (!projectId) {
-    alert("Veuillez d'abord créer un projet en cliquant sur '+ Nouveau projet'.");
+    alert("Veuillez d'abord créer un projet.");
     return;
   }
 
   const modal = document.getElementById('modal-task');
   const btnDelete = document.getElementById('btn-delete');
   const title = document.getElementById('modal-title');
-  
+  const parentSelect = document.getElementById('task-parent');
+
+  // Remplissage des tâches parentes éligibles
+  const availableParents = currentTasks.filter(t => t.id !== taskId);
+  parentSelect.innerHTML = '<option value="">Aucune (Tâche principale)</option>' + 
+    availableParents.map(t => `<option value="${t.id}">${t.nom}</option>`).join('');
+
   if (taskId) {
     const task = currentTasks.find(t => t.id === taskId);
     if (!task) return;
-    
+
     document.getElementById('task-id').value = task.id;
     document.getElementById('task-name').value = task.nom;
     document.getElementById('task-assignee').value = task.responsable || '';
-    document.getElementById('task-start').value = task.date_debut;
-    document.getElementById('task-end').value = task.date_fin;
-    document.getElementById('task-status').value = task.statut;
-    document.getElementById('task-progress').value = task.avancement;
-    
+    document.getElementById('task-start').value = task.date_debut || '';
+    document.getElementById('task-end').value = task.date_fin || '';
+    document.getElementById('task-status').value = task.statut || 'À faire';
+    document.getElementById('task-progress').value = task.avancement || 0;
+    parentSelect.value = task.parent_id || '';
+
     title.textContent = "Modifier la tâche";
     btnDelete.classList.remove('hidden');
   } else {
     document.getElementById('task-form').reset();
     document.getElementById('task-id').value = '';
+    parentSelect.value = '';
+    
+    const today = new Date().toISOString().split('T')[0];
+    const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    document.getElementById('task-start').value = today;
+    document.getElementById('task-end').value = nextWeek;
+
     title.textContent = "Nouvelle tâche";
     btnDelete.classList.add('hidden');
   }
-  
+
   modal.classList.remove('hidden');
 }
 
-function closeModal() { document.getElementById('modal-task').classList.add('hidden'); }
+function closeModal() {
+  document.getElementById('modal-task').classList.add('hidden');
+}
 
 async function saveTask(e) {
   e.preventDefault();
   const taskId = document.getElementById('task-id').value;
   const projectId = document.getElementById('project-select').value;
-  
+  const parentId = document.getElementById('task-parent').value || null;
+
   const payload = {
     projet_id: projectId,
-    nom: document.getElementById('task-name').value,
-    responsable: document.getElementById('task-assignee').value,
+    parent_id: parentId,
+    nom: document.getElementById('task-name').value.trim(),
+    responsable: document.getElementById('task-assignee').value.trim(),
     date_debut: document.getElementById('task-start').value,
     date_fin: document.getElementById('task-end').value,
     statut: document.getElementById('task-status').value,
@@ -206,35 +347,45 @@ async function saveTask(e) {
     ({ error } = await supabaseClient.from('taches').insert([payload]));
   }
 
-  if (!error) {
+  if (error) {
+    alert("Erreur lors de l'enregistrement : " + error.message);
+  } else {
     closeModal();
     loadTasks();
-  } else {
-    alert("Erreur Supabase : " + error.message);
   }
 }
 
 async function deleteTask() {
   const taskId = document.getElementById('task-id').value;
-  if (!taskId || !confirm("Voulez-vous vraiment supprimer cette tâche ?")) return;
+  if (!taskId) return;
 
-  const { error } = await supabaseClient.from('taches').delete().eq('id', taskId);
-  if (!error) {
-    closeModal();
-    loadTasks();
-  } else {
-    alert("Erreur lors de la suppression : " + error.message);
+  if (confirm("Es-tu sûre de vouloir supprimer cette tâche ?")) {
+    const { error } = await supabaseClient.from('taches').delete().eq('id', taskId);
+    if (error) {
+      alert("Erreur lors de la suppression : " + error.message);
+    } else {
+      closeModal();
+      loadTasks();
+    }
   }
 }
 
-function switchTab(tab) {
-  ['list', 'kanban', 'gantt'].forEach(t => {
-    document.getElementById(`view-${t}`).classList.add('hidden');
-    document.getElementById(`tab-${t}`).className = "py-2 px-4 font-semibold text-gray-500 hover:text-blue-600";
-  });
-  document.getElementById(`view-${tab}`).classList.remove('hidden');
-  document.getElementById(`tab-${tab}`).className = "py-2 px-4 font-semibold text-blue-600 border-b-2 border-blue-600";
-  if (tab === 'gantt') renderGantt();
+// --- UTILITAIRES ---
+
+function formatDate(dateStr) {
+  if (!dateStr) return '-';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
-init();
+function getStatusBadgeClass(statut) {
+  switch (statut) {
+    case 'En cours':
+      return 'bg-blue-100 text-blue-800';
+    case 'Terminé':
+      return 'bg-green-100 text-green-800';
+    default:
+      return 'bg-slate-100 text-slate-700';
+  }
+}

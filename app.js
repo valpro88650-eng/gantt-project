@@ -1,56 +1,93 @@
-// Connexion à Supabase sans conflit de déclaration
-const client = (typeof supabaseClient !== 'undefined')
-  ? supabaseClient
-  : supabase.createClient(
-      typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : window.SUPABASE_URL,
-      typeof SUPABASE_KEY !== 'undefined' ? SUPABASE_KEY : window.SUPABASE_KEY
-    );
+// Variable globale pour le client Supabase
+let client = null;
+
+function getSupabaseClient() {
+  if (client) return client;
+
+  // 1. Si config.js a déjà créé l'instance
+  if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+    client = supabaseClient;
+    return client;
+  }
+
+  // 2. Récupération des clés depuis config.js
+  const url = (typeof SUPABASE_URL !== 'undefined') ? SUPABASE_URL : window.SUPABASE_URL;
+  const key = (typeof SUPABASE_KEY !== 'undefined') ? SUPABASE_KEY : window.SUPABASE_KEY;
+
+  if (!url || !key) {
+    console.error("Clés Supabase manquantes dans config.js");
+    return null;
+  }
+
+  if (typeof supabase === 'undefined') {
+    console.error("Bibliothèque Supabase non chargée");
+    return null;
+  }
+
+  client = supabase.createClient(url, key);
+  return client;
+}
 
 // ÉTAT GLOBAL DE L'APPLICATION
 let currentTasks = [];
 let currentTab = 'kanban';
 
-// INITIALISATION AU CHARGEMENT DE LA PAGE
-document.addEventListener('DOMContentLoaded', () => {
+// INITIALISATION SÉCURISÉE
+// Si le DOM est déjà prêt, on lance immédiatement au lieu d'attendre l'événement
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', loadProjects);
+} else {
   loadProjects();
-});
+}
 
 // --- GESTION DES PROJETS ---
 
 async function loadProjects() {
   const select = document.getElementById('project-select');
-  
-  const { data: projects, error } = await client
-    .from('projets')
-    .select('*')
-    .order('created_at', { ascending: true });
+  if (!select) return;
 
-  if (error) {
-    console.error("Erreur chargement projets :", error);
-    select.innerHTML = '<option value="">Erreur de chargement</option>';
+  const sb = getSupabaseClient();
+  if (!sb) {
+    select.innerHTML = '<option value="">Erreur : Fichier config.js non lu</option>';
     return;
   }
 
-  select.innerHTML = '';
+  try {
+    const { data: projects, error } = await sb
+      .from('projets')
+      .select('*')
+      .order('created_at', { ascending: true });
 
-  if (!projects || projects.length === 0) {
-    select.innerHTML = '<option value="">Aucun projet — Cliquez sur + Nouveau</option>';
-    currentTasks = [];
-    renderAllViews();
-    return;
+    if (error) {
+      console.error("Erreur Supabase :", error);
+      select.innerHTML = `<option value="">Erreur : ${error.message}</option>`;
+      return;
+    }
+
+    select.innerHTML = '';
+
+    if (!projects || projects.length === 0) {
+      select.innerHTML = '<option value="">Aucun projet — Cliquez sur + Nouveau</option>';
+      currentTasks = [];
+      renderAllViews();
+      return;
+    }
+
+    projects.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.nom || p.name || 'Projet sans nom';
+      select.appendChild(opt);
+    });
+
+    // Sélectionne automatiquement le premier projet
+    select.value = projects[0].id;
+
+    loadTasks();
+  } catch (err) {
+    console.error("Exception lors du chargement :", err);
+    select.innerHTML = `<option value="">Erreur script : ${err.message}</option>`;
   }
-
-  projects.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = p.nom || p.name || 'Projet sans nom';
-    select.appendChild(opt);
-  });
-
-  // Sélectionne le premier projet de la liste par défaut
-  select.value = projects[0].id;
-
-  loadTasks();
 }
 
 function onProjectChange() {
@@ -71,7 +108,10 @@ async function saveProject(e) {
   const nameInput = document.getElementById('project-name').value.trim();
   if (!nameInput) return;
 
-  const { data, error } = await client
+  const sb = getSupabaseClient();
+  if (!sb) return;
+
+  const { data, error } = await sb
     .from('projets')
     .insert([{ nom: nameInput }])
     .select();
@@ -98,7 +138,10 @@ async function loadTasks() {
     return;
   }
 
-  const { data: tasks, error } = await client
+  const sb = getSupabaseClient();
+  if (!sb) return;
+
+  const { data: tasks, error } = await sb
     .from('taches')
     .select('*')
     .eq('projet_id', projectId)
@@ -106,7 +149,7 @@ async function loadTasks() {
 
   if (error) {
     console.error("Erreur chargement tâches :", error);
-    alert("Erreur lors du chargement des tâches.");
+    alert("Erreur lors du chargement des tâches : " + error.message);
     return;
   }
 
@@ -343,11 +386,14 @@ async function saveTask(e) {
     avancement: parseInt(document.getElementById('task-progress').value) || 0
   };
 
+  const sb = getSupabaseClient();
+  if (!sb) return;
+
   let error;
   if (taskId) {
-    ({ error } = await client.from('taches').update(payload).eq('id', taskId));
+    ({ error } = await sb.from('taches').update(payload).eq('id', taskId));
   } else {
-    ({ error } = await client.from('taches').insert([payload]));
+    ({ error } = await sb.from('taches').insert([payload]));
   }
 
   if (error) {
@@ -363,7 +409,10 @@ async function deleteTask() {
   if (!taskId) return;
 
   if (confirm("Es-tu sûre de vouloir supprimer cette tâche ?")) {
-    const { error } = await client.from('taches').delete().eq('id', taskId);
+    const sb = getSupabaseClient();
+    if (!sb) return;
+
+    const { error } = await sb.from('taches').delete().eq('id', taskId);
     if (error) {
       alert("Erreur lors de la suppression : " + error.message);
     } else {

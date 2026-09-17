@@ -1,4 +1,3 @@
-// Variable globale pour le client Supabase
 let client = null;
 let currentProjectId = null;
 
@@ -27,11 +26,9 @@ function getSupabaseClient() {
   return client;
 }
 
-// ÉTAT GLOBAL DE L'APPLICATION
 let currentTasks = [];
 let currentTab = 'kanban';
 
-// INITIALISATION SÉCURISÉE
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', loadProjects);
 } else {
@@ -350,7 +347,23 @@ function renderListView() {
   });
 }
 
-// --- VUE GANTT PERSONNALISÉE (Option B) ---
+// --- VUE GANTT PERSONNALISÉE ---
+
+function parseDateSafe(str) {
+  if (!str) return null;
+  const clean = str.toString().split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      return new Date(y, m, d);
+    }
+  }
+  const date = new Date(str);
+  return isNaN(date.getTime()) ? null : date;
+}
 
 function renderGanttView() {
   const treeContainer = document.getElementById('gantt-task-tree');
@@ -364,18 +377,18 @@ function renderGanttView() {
   bodyContainer.innerHTML = '';
 
   if (!currentTasks || currentTasks.length === 0) {
-    treeContainer.innerHTML = `<div class="p-4 text-xs text-slate-400 font-medium">Aucune tâche enregistrée</div>`;
-    bodyContainer.innerHTML = `<div class="p-4 text-xs text-slate-400 font-medium">Ajoutez des tâches avec + Nouvelle tâche pour alimenter le diagramme.</div>`;
+    treeContainer.innerHTML = `<div class="p-4 text-xs text-slate-400 italic">Aucune tâche</div>`;
+    bodyContainer.innerHTML = `<div class="p-8 text-center text-slate-500 text-sm">Ce projet ne contient aucune tâche.</div>`;
     return;
   }
 
-  // 1. Hiérarchie des tâches (Anti-boucle infinie)
+  // 1. Hiérarchie des tâches
   const orderedTasks = [];
   const visited = new Set();
 
   function addChildren(parentId, level) {
     if (level > 10) return;
-    const children = currentTasks.filter(t => t.parent_id === parentId);
+    const children = currentTasks.filter(t => String(t.parent_id) === String(parentId));
     children.forEach(c => {
       if (!visited.has(c.id)) {
         visited.add(c.id);
@@ -385,7 +398,7 @@ function renderGanttView() {
     });
   }
 
-  const rootTasks = currentTasks.filter(t => !t.parent_id || !currentTasks.some(p => p.id === t.parent_id));
+  const rootTasks = currentTasks.filter(t => !t.parent_id || !currentTasks.some(p => String(p.id) === String(t.parent_id)));
   rootTasks.forEach(r => {
     if (!visited.has(r.id)) {
       visited.add(r.id);
@@ -401,19 +414,16 @@ function renderGanttView() {
     }
   });
 
-  // 2. Calcul sécurisé des dates min et max
+  // 2. Calcul des dates
   let minTimestamp = Infinity;
   let maxTimestamp = -Infinity;
 
   orderedTasks.forEach(t => {
-    if (t.date_debut) {
-      const d = new Date(t.date_debut + 'T00:00:00');
-      if (!isNaN(d.getTime()) && d.getTime() < minTimestamp) minTimestamp = d.getTime();
-    }
-    if (t.date_fin) {
-      const d = new Date(t.date_fin + 'T00:00:00');
-      if (!isNaN(d.getTime()) && d.getTime() > maxTimestamp) maxTimestamp = d.getTime();
-    }
+    const dStart = parseDateSafe(t.date_debut);
+    const dEnd = parseDateSafe(t.date_fin);
+
+    if (dStart && dStart.getTime() < minTimestamp) minTimestamp = dStart.getTime();
+    if (dEnd && dEnd.getTime() > maxTimestamp) maxTimestamp = dEnd.getTime();
   });
 
   const now = new Date();
@@ -422,8 +432,8 @@ function renderGanttView() {
   const startDate = minTimestamp !== Infinity ? new Date(minTimestamp) : new Date(now);
   const endDate = maxTimestamp !== -Infinity ? new Date(maxTimestamp) : new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
 
-  startDate.setDate(startDate.getDate() - 2);
-  endDate.setDate(endDate.getDate() + 4);
+  startDate.setDate(startDate.getDate() - 3);
+  endDate.setDate(endDate.getDate() + 5);
 
   const days = [];
   const cur = new Date(startDate);
@@ -434,7 +444,7 @@ function renderGanttView() {
 
   const DAY_WIDTH = 48;
 
-  // 3. Rendu de l'en-tête de timeline
+  // 3. En-tête des jours
   headerContainer.style.width = `${days.length * DAY_WIDTH}px`;
   days.forEach(d => {
     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
@@ -454,11 +464,10 @@ function renderGanttView() {
     headerContainer.appendChild(dayDiv);
   });
 
-  // 4. Rendu des lignes
+  // 4. Lignes de tâches
   bodyContainer.style.width = `${days.length * DAY_WIDTH}px`;
 
   orderedTasks.forEach(task => {
-    // Colonne fixe à gauche (Tâche)
     const treeRow = document.createElement('div');
     treeRow.className = "h-12 flex items-center px-3 text-xs font-medium text-slate-800 hover:bg-slate-100/80 cursor-pointer border-b border-slate-100 transition select-none";
     treeRow.onclick = () => openTaskModal(task.id);
@@ -473,12 +482,10 @@ function renderGanttView() {
     `;
     treeContainer.appendChild(treeRow);
 
-    // Timeline à droite
     const timeRow = document.createElement('div');
     timeRow.className = "h-12 relative flex items-center border-b border-slate-100 hover:bg-slate-50 transition";
     timeRow.style.width = `${days.length * DAY_WIDTH}px`;
 
-    // Quadrillage week-ends
     days.forEach((d, i) => {
       const isWeekend = d.getDay() === 0 || d.getDay() === 6;
       if (isWeekend) {
@@ -490,31 +497,28 @@ function renderGanttView() {
       }
     });
 
-    // Barre de tâche
-    if (task.date_debut && task.date_fin) {
-      const taskStart = new Date(task.date_debut + 'T00:00:00');
-      const taskEnd = new Date(task.date_fin + 'T00:00:00');
+    const taskStart = parseDateSafe(task.date_debut);
+    const taskEnd = parseDateSafe(task.date_fin);
 
-      if (!isNaN(taskStart.getTime()) && !isNaN(taskEnd.getTime())) {
-        const offsetDays = Math.max(0, Math.round((taskStart - startDate) / (1000 * 60 * 60 * 24)));
-        const durationDays = Math.max(1, Math.round((taskEnd - taskStart) / (1000 * 60 * 60 * 24)) + 1);
+    if (taskStart && taskEnd) {
+      const offsetDays = Math.max(0, Math.round((taskStart - startDate) / (1000 * 60 * 60 * 24)));
+      const durationDays = Math.max(1, Math.round((taskEnd - taskStart) / (1000 * 60 * 60 * 24)) + 1);
 
-        const leftPos = offsetDays * DAY_WIDTH;
-        const barWidth = durationDays * DAY_WIDTH;
+      const leftPos = offsetDays * DAY_WIDTH;
+      const barWidth = durationDays * DAY_WIDTH;
 
-        const bar = document.createElement('div');
-        bar.className = `absolute h-7 rounded-md px-2 text-[11px] font-semibold text-white flex items-center justify-between shadow-sm cursor-pointer transition hover:brightness-110 ${getBarColorClass(task.statut)}`;
-        bar.style.left = `${leftPos}px`;
-        bar.style.width = `${barWidth}px`;
-        bar.onclick = () => openTaskModal(task.id);
+      const bar = document.createElement('div');
+      bar.className = `absolute h-7 rounded-md px-2 text-[11px] font-semibold text-white flex items-center justify-between shadow-sm cursor-pointer transition hover:brightness-110 ${getBarColorClass(task.statut)}`;
+      bar.style.left = `${leftPos}px`;
+      bar.style.width = `${barWidth}px`;
+      bar.onclick = () => openTaskModal(task.id);
 
-        bar.innerHTML = `
-          <span class="truncate text-[10px]">${formatDate(task.date_debut)} → ${formatDate(task.date_fin)}</span>
-          <span class="text-[9px] bg-black/20 px-1 rounded ml-1 font-mono">${task.avancement || 0}%</span>
-        `;
+      bar.innerHTML = `
+        <span class="truncate text-[10px]">${formatDate(task.date_debut)} → ${formatDate(task.date_fin)}</span>
+        <span class="text-[9px] bg-black/20 px-1 rounded ml-1 font-mono">${task.avancement || 0}%</span>
+      `;
 
-        timeRow.appendChild(bar);
-      }
+      timeRow.appendChild(bar);
     }
 
     bodyContainer.appendChild(timeRow);
@@ -638,8 +642,6 @@ async function deleteTask() {
     }
   }
 }
-
-// --- UTILITAIRES ---
 
 function formatDate(dateStr) {
   if (!dateStr) return '-';

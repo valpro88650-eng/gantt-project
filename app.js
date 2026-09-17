@@ -1,8 +1,4 @@
-// CONFIGURATION SUPABASE
-const SUPABASE_URL = 'https://TON-PROJET.supabase.co'; 
-const SUPABASE_KEY = 'TA-CLE-ANON-PUBLIQUE';
-
-// Initialisation du client Supabase
+// Initialisation du client Supabase via les variables globales de config.js
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ÉTAT GLOBAL DE L'APPLICATION

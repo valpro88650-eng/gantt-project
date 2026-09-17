@@ -363,143 +363,158 @@ function renderGanttView() {
   headerContainer.innerHTML = '';
   bodyContainer.innerHTML = '';
 
-  if (currentTasks.length === 0) {
-    treeContainer.innerHTML = `<div class="p-4 text-xs text-slate-400">Aucune tâche</div>`;
-    bodyContainer.innerHTML = `<div class="p-4 text-xs text-slate-400">Aucune tâche à afficher dans la timeline</div>`;
+  if (!currentTasks || currentTasks.length === 0) {
+    treeContainer.innerHTML = `<div class="p-4 text-xs text-slate-400 font-medium">Aucune tâche enregistrée</div>`;
+    bodyContainer.innerHTML = `<div class="p-4 text-xs text-slate-400 font-medium">Ajoutez des tâches avec + Nouvelle tâche pour alimenter le diagramme.</div>`;
     return;
   }
 
-  // 1. Détermination de la hiérarchie des tâches (Principales / Sous-tâches)
+  // 1. Hiérarchie des tâches (Anti-boucle infinie)
   const orderedTasks = [];
+  const visited = new Set();
+
   function addChildren(parentId, level) {
+    if (level > 10) return;
     const children = currentTasks.filter(t => t.parent_id === parentId);
     children.forEach(c => {
-      orderedTasks.push({ ...c, level });
-      addChildren(c.id, level + 1);
+      if (!visited.has(c.id)) {
+        visited.add(c.id);
+        orderedTasks.push({ ...c, level });
+        addChildren(c.id, level + 1);
+      }
     });
   }
 
   const rootTasks = currentTasks.filter(t => !t.parent_id || !currentTasks.some(p => p.id === t.parent_id));
   rootTasks.forEach(r => {
-    orderedTasks.push({ ...r, level: 0 });
-    addChildren(r.id, 1);
+    if (!visited.has(r.id)) {
+      visited.add(r.id);
+      orderedTasks.push({ ...r, level: 0 });
+      addChildren(r.id, 1);
+    }
   });
 
-  // 2. Calcul de la plage de dates du projet
-  let minDate = null;
-  let maxDate = null;
+  currentTasks.forEach(t => {
+    if (!visited.has(t.id)) {
+      visited.add(t.id);
+      orderedTasks.push({ ...t, level: 0 });
+    }
+  });
+
+  // 2. Calcul sécurisé des dates min et max
+  let minTimestamp = Infinity;
+  let maxTimestamp = -Infinity;
 
   orderedTasks.forEach(t => {
     if (t.date_debut) {
-      const d = new Date(t.date_debut);
-      if (!minDate || d < minDate) minDate = d;
+      const d = new Date(t.date_debut + 'T00:00:00');
+      if (!isNaN(d.getTime()) && d.getTime() < minTimestamp) minTimestamp = d.getTime();
     }
     if (t.date_fin) {
-      const d = new Date(t.date_fin);
-      if (!maxDate || d > maxDate) maxDate = d;
+      const d = new Date(t.date_fin + 'T00:00:00');
+      if (!isNaN(d.getTime()) && d.getTime() > maxTimestamp) maxTimestamp = d.getTime();
     }
   });
 
-  if (!minDate) minDate = new Date();
-  if (!maxDate) maxDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
 
-  // Marge de 2 jours avant et 3 jours après
-  const startDate = new Date(minDate);
+  const startDate = minTimestamp !== Infinity ? new Date(minTimestamp) : new Date(now);
+  const endDate = maxTimestamp !== -Infinity ? new Date(maxTimestamp) : new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
   startDate.setDate(startDate.getDate() - 2);
+  endDate.setDate(endDate.getDate() + 4);
 
-  const endDate = new Date(maxDate);
-  endDate.setDate(endDate.getDate() + 3);
-
-  // Génération des jours de la timeline
   const days = [];
-  let current = new Date(startDate);
-  while (current <= endDate) {
-    days.push(new Date(current));
-    current.setDate(current.getDate() + 1);
+  const cur = new Date(startDate);
+  while (cur <= endDate) {
+    days.push(new Date(cur));
+    cur.setDate(cur.getDate() + 1);
   }
 
-  const DAY_WIDTH = 50; // Largeur en px par jour
+  const DAY_WIDTH = 48;
 
-  // 3. Rendu de l'en-tête de la timeline
+  // 3. Rendu de l'en-tête de timeline
   headerContainer.style.width = `${days.length * DAY_WIDTH}px`;
   days.forEach(d => {
     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
     const dayDiv = document.createElement('div');
     dayDiv.style.width = `${DAY_WIDTH}px`;
-    dayDiv.className = `shrink-0 border-r border-slate-200 flex flex-col justify-center items-center py-1 text-[11px] ${isWeekend ? 'bg-slate-200/50 text-slate-400' : 'text-slate-600'}`;
+    dayDiv.className = `shrink-0 border-r border-slate-200 flex flex-col justify-center items-center py-1 text-[11px] select-none ${isWeekend ? 'bg-slate-200/60 text-slate-400 font-semibold' : 'text-slate-600 font-medium'}`;
     
     const dayName = d.toLocaleDateString('fr-FR', { weekday: 'narrow' });
     const dayNum = d.getDate();
     const monthName = d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '');
 
     dayDiv.innerHTML = `
-      <span class="text-[9px] uppercase font-normal">${dayName}</span>
-      <span class="font-bold">${dayNum}</span>
+      <span class="text-[9px] uppercase">${dayName}</span>
+      <span class="font-bold text-slate-800">${dayNum}</span>
       <span class="text-[9px] text-slate-400">${monthName}</span>
     `;
     headerContainer.appendChild(dayDiv);
   });
 
-  // 4. Rendu des lignes (Arborescence à gauche & Timeline à droite)
+  // 4. Rendu des lignes
   bodyContainer.style.width = `${days.length * DAY_WIDTH}px`;
 
   orderedTasks.forEach(task => {
-    // --- COLONNE FIXE (GAUCHE) ---
+    // Colonne fixe à gauche (Tâche)
     const treeRow = document.createElement('div');
-    treeRow.className = "h-12 flex items-center px-3 text-xs font-medium text-slate-800 hover:bg-slate-50 cursor-pointer border-b border-slate-100 transition";
+    treeRow.className = "h-12 flex items-center px-3 text-xs font-medium text-slate-800 hover:bg-slate-100/80 cursor-pointer border-b border-slate-100 transition select-none";
     treeRow.onclick = () => openTaskModal(task.id);
 
-    const indent = task.level * 18;
-    const prefix = task.level > 0 ? `<span class="text-blue-500 font-bold mr-1">↳</span>` : `<span class="mr-1">📌</span>`;
+    const indent = task.level * 16;
+    const prefix = task.level > 0 ? `<span class="text-blue-500 font-bold mr-1.5">↳</span>` : `<span class="mr-1.5">📌</span>`;
 
     treeRow.style.paddingLeft = `${12 + indent}px`;
     treeRow.innerHTML = `
       ${prefix}
-      <span class="truncate" title="${task.nom}">${task.nom}</span>
+      <span class="truncate font-medium" title="${task.nom}">${task.nom}</span>
     `;
     treeContainer.appendChild(treeRow);
 
-    // --- TIMELINE (DROITE) ---
+    // Timeline à droite
     const timeRow = document.createElement('div');
-    timeRow.className = "h-12 relative flex items-center border-b border-slate-100 hover:bg-slate-50/80 transition";
+    timeRow.className = "h-12 relative flex items-center border-b border-slate-100 hover:bg-slate-50 transition";
     timeRow.style.width = `${days.length * DAY_WIDTH}px`;
 
-    // Quadrillage de fond (week-ends)
+    // Quadrillage week-ends
     days.forEach((d, i) => {
       const isWeekend = d.getDay() === 0 || d.getDay() === 6;
       if (isWeekend) {
         const bgGrid = document.createElement('div');
         bgGrid.style.left = `${i * DAY_WIDTH}px`;
         bgGrid.style.width = `${DAY_WIDTH}px`;
-        bgGrid.className = "absolute top-0 bottom-0 bg-slate-100/40 border-r border-slate-200/40 pointer-events-none";
+        bgGrid.className = "absolute top-0 bottom-0 bg-slate-100/50 border-r border-slate-200/40 pointer-events-none";
         timeRow.appendChild(bgGrid);
       }
     });
 
-    // Barre de la tâche
+    // Barre de tâche
     if (task.date_debut && task.date_fin) {
-      const taskStart = new Date(task.date_debut);
-      const taskEnd = new Date(task.date_fin);
+      const taskStart = new Date(task.date_debut + 'T00:00:00');
+      const taskEnd = new Date(task.date_fin + 'T00:00:00');
 
-      const offsetDays = Math.max(0, Math.round((taskStart - startDate) / (1000 * 60 * 60 * 24)));
-      const durationDays = Math.max(1, Math.round((taskEnd - taskStart) / (1000 * 60 * 60 * 24)) + 1);
+      if (!isNaN(taskStart.getTime()) && !isNaN(taskEnd.getTime())) {
+        const offsetDays = Math.max(0, Math.round((taskStart - startDate) / (1000 * 60 * 60 * 24)));
+        const durationDays = Math.max(1, Math.round((taskEnd - taskStart) / (1000 * 60 * 60 * 24)) + 1);
 
-      const leftPos = offsetDays * DAY_WIDTH;
-      const barWidth = durationDays * DAY_WIDTH;
+        const leftPos = offsetDays * DAY_WIDTH;
+        const barWidth = durationDays * DAY_WIDTH;
 
-      const bar = document.createElement('div');
-      bar.className = `absolute h-7 rounded-lg px-2 text-[11px] font-semibold text-white flex items-center justify-between shadow-sm cursor-pointer transition hover:brightness-110 ${getBarColorClass(task.statut)}`;
-      bar.style.left = `${leftPos}px`;
-      bar.style.width = `${barWidth}px`;
-      bar.onclick = () => openTaskModal(task.id);
+        const bar = document.createElement('div');
+        bar.className = `absolute h-7 rounded-md px-2 text-[11px] font-semibold text-white flex items-center justify-between shadow-sm cursor-pointer transition hover:brightness-110 ${getBarColorClass(task.statut)}`;
+        bar.style.left = `${leftPos}px`;
+        bar.style.width = `${barWidth}px`;
+        bar.onclick = () => openTaskModal(task.id);
 
-      // Affichage des dates initiales dans la barre
-      bar.innerHTML = `
-        <span class="truncate">${formatDate(task.date_debut)} → ${formatDate(task.date_fin)}</span>
-        <span class="text-[9px] bg-black/20 px-1 rounded ml-1">${task.avancement || 0}%</span>
-      `;
+        bar.innerHTML = `
+          <span class="truncate text-[10px]">${formatDate(task.date_debut)} → ${formatDate(task.date_fin)}</span>
+          <span class="text-[9px] bg-black/20 px-1 rounded ml-1 font-mono">${task.avancement || 0}%</span>
+        `;
 
-      timeRow.appendChild(bar);
+        timeRow.appendChild(bar);
+      }
     }
 
     bodyContainer.appendChild(timeRow);

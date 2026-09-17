@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gestion de Projets</title>
-  <!-- Tailwind CSS & Frappe Gantt -->
+  <!-- Bibliothèques externes -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.css">
@@ -12,25 +12,15 @@
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans">
 
-  <!-- Configuration Supabase -->
-  <script>
-    // REMPLACE CES DEUX VARIABLES PAR TES CLÉS SUPABASE
-    const SUPABASE_URL = "https://emvuqpgznlsbqgvqmpiy.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtdnVxcGd6bmxzYnFndnFtcGl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2NjY1MTIsImV4cCI6MjEwNTI0MjUxMn0.o_wmu8GGGZfakIKIGPuW53IrBQsBNCa5YpVyZGvIEJI";
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  </script>
-
   <!-- En-tête -->
   <header class="bg-white shadow p-4 flex justify-between items-center">
     <h1 class="text-xl font-bold text-gray-800">📋 Mon Projet en un Coup d'Œil</h1>
-    <div id="project-selector-container">
-      <select id="project-select" onchange="loadTasks()" class="border p-2 rounded bg-gray-50">
-        <option value="">Chargement des projets...</option>
-      </select>
-    </div>
+    <select id="project-select" onchange="loadTasks()" class="border p-2 rounded bg-gray-50">
+      <option value="">Chargement...</option>
+    </select>
   </header>
 
-  <!-- Navigation par onglets -->
+  <!-- Navigation -->
   <div class="max-w-7xl mx-auto mt-6 px-4">
     <div class="flex border-b border-gray-300 mb-6">
       <button onclick="switchTab('list')" id="tab-list" class="py-2 px-4 font-semibold text-blue-600 border-b-2 border-blue-600">📋 Liste</button>
@@ -38,7 +28,7 @@
       <button onclick="switchTab('gantt')" id="tab-gantt" class="py-2 px-4 font-semibold text-gray-500 hover:text-blue-600">📅 Diagramme de Gantt</button>
     </div>
 
-    <!-- VUE 1 : LISTE -->
+    <!-- VUE LISTE -->
     <div id="view-list" class="space-y-4">
       <div class="flex justify-between items-center bg-white p-4 rounded shadow">
         <h2 class="text-lg font-bold">Tâches du projet</h2>
@@ -56,14 +46,12 @@
               <th class="p-3">Avancement</th>
             </tr>
           </thead>
-          <tbody id="task-list-body">
-            <tr><td colspan="6" class="p-4 text-center text-gray-500">Chargement...</td></tr>
-          </tbody>
+          <tbody id="task-list-body"></tbody>
         </table>
       </div>
     </div>
 
-    <!-- VUE 2 : KANBAN -->
+    <!-- VUE KANBAN -->
     <div id="view-kanban" class="hidden grid grid-cols-1 md:grid-cols-3 gap-4">
       <div class="bg-gray-200 p-4 rounded shadow">
         <h3 class="font-bold text-gray-700 mb-3">À faire</h3>
@@ -79,102 +67,59 @@
       </div>
     </div>
 
-    <!-- VUE 3 : GANTT -->
+    <!-- VUE GANTT -->
     <div id="view-gantt" class="hidden bg-white p-4 rounded shadow overflow-x-auto">
       <svg id="gantt-target"></svg>
     </div>
   </div>
 
-  <!-- Script Logique App -->
-  <script>
-    let currentTasks = [];
-
-    async function init() {
-      const { data: projets } = await supabaseClient.from('projets').select('*');
-      const select = document.getElementById('project-select');
-      select.innerHTML = projets.map(p => `<option value="${p.id}">${p.nom}</option>`).join('');
-      if (projets.length > 0) loadTasks();
-    }
-
-    async function loadTasks() {
-      const projectId = document.getElementById('project-select').value;
-      const { data: taches } = await supabaseClient.from('taches').select('*').eq('projet_id', projectId);
-      currentTasks = taches || [];
-      renderList();
-      renderKanban();
-      renderGantt();
-    }
-
-    function renderList() {
-      const body = document.getElementById('task-list-body');
-      if (currentTasks.length === 0) {
-        body.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">Aucune tâche enregistrée.</td></tr>`;
-        return;
-      }
-      body.innerHTML = currentTasks.map(t => `
-        <tr class="border-b hover:bg-gray-50">
-          <td class="p-3 font-medium">${t.nom}</td>
-          <td class="p-3">${t.responsable || '-'}</td>
-          <td class="p-3 text-sm">${t.date_debut}</td>
-          <td class="p-3 text-sm">${t.date_fin}</td>
-          <td class="p-3"><span class="px-2 py-1 text-xs rounded bg-gray-200">${t.statut}</span></td>
-          <td class="p-3 font-semibold">${t.avancement}%</td>
-        </tr>
-      `).join('');
-    }
-
-    function renderKanban() {
-      const todo = document.getElementById('kanban-todo');
-      const doing = document.getElementById('kanban-doing');
-      const done = document.getElementById('kanban-done');
-
-      todo.innerHTML = renderCards(currentTasks.filter(t => t.statut === 'À faire'));
-      doing.innerHTML = renderCards(currentTasks.filter(t => t.statut === 'En cours'));
-      done.innerHTML = renderCards(currentTasks.filter(t => t.statut === 'Terminé'));
-    }
-
-    function renderCards(tasks) {
-      return tasks.map(t => `
-        <div class="bg-white p-3 rounded shadow text-sm border-l-4 border-blue-500">
-          <div class="font-bold">${t.nom}</div>
-          <div class="text-xs text-gray-500 mt-1">👤 ${t.responsable || 'Non assigné'}</div>
-          <div class="text-xs text-gray-400 mt-1">📅 ${t.date_debut} → ${t.date_fin}</div>
+  <!-- MODALE -->
+  <div id="modal-task" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg p-6 max-w-md w-full shadow-lg">
+      <h3 class="text-lg font-bold mb-4">Nouvelle tâche</h3>
+      <form id="task-form" onsubmit="saveTask(event)" class="space-y-3">
+        <div>
+          <label class="block text-sm font-medium">Nom de la tâche</label>
+          <input type="text" id="task-name" required class="w-full border p-2 rounded">
         </div>
-      `).join('');
-    }
+        <div>
+          <label class="block text-sm font-medium">Responsable</label>
+          <input type="text" id="task-assignee" class="w-full border p-2 rounded">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-sm font-medium">Date début</label>
+            <input type="date" id="task-start" required class="border p-2 rounded w-full">
+          </div>
+          <div>
+            <label class="block text-sm font-medium">Date fin</label>
+            <input type="date" id="task-end" required class="border p-2 rounded w-full">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-sm font-medium">Statut</label>
+            <select id="task-status" class="w-full border p-2 rounded">
+              <option value="À faire">À faire</option>
+              <option value="En cours">En cours</option>
+              <option value="Terminé">Terminé</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium">Avancement (%)</label>
+            <input type="number" id="task-progress" min="0" max="100" value="0" class="w-full border p-2 rounded">
+          </div>
+        </div>
+        <div class="flex justify-end space-x-2 pt-4">
+          <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded">Annuler</button>
+          <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
-    function renderGantt() {
-      if (currentTasks.length === 0) return;
-      const tasksFormatted = currentTasks.map(t => ({
-        id: t.id,
-        name: t.nom,
-        start: t.date_debut,
-        end: t.date_fin,
-        progress: t.avancement
-      }));
-      document.getElementById('gantt-target').innerHTML = '';
-      new Gantt("#gantt-target", tasksFormatted, {
-        language: 'fr',
-        header_height: 50,
-        column_width: 30,
-        step: 24,
-        view_modes: ['Day', 'Week', 'Month'],
-        bar_height: 20,
-        padding: 18
-      });
-    }
-
-    function switchTab(tab) {
-      ['list', 'kanban', 'gantt'].forEach(t => {
-        document.getElementById(`view-${t}`).classList.add('hidden');
-        document.getElementById(`tab-${t}`).className = "py-2 px-4 font-semibold text-gray-500 hover:text-blue-600";
-      });
-      document.getElementById(`view-${tab}`).classList.remove('hidden');
-      document.getElementById(`tab-${tab}`).className = "py-2 px-4 font-semibold text-blue-600 border-b-2 border-blue-600";
-      if (tab === 'gantt') renderGantt();
-    }
-
-    init();
-  </script>
+  <!-- Chargement des scripts JS modulaires -->
+  <script src="config.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

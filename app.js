@@ -1,5 +1,8 @@
-// Initialisation du client Supabase via les variables globales de config.js
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// Récupération sécurisée des identifiants depuis config.js
+const url = typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : (window.SUPABASE_URL || '');
+const key = typeof SUPABASE_KEY !== 'undefined' ? SUPABASE_KEY : (window.SUPABASE_KEY || '');
+
+const supabaseClient = supabase.createClient(url, key);
 
 // ÉTAT GLOBAL DE L'APPLICATION
 let currentTasks = [];
@@ -278,7 +281,6 @@ function openTaskModal(taskId = null) {
   const title = document.getElementById('modal-title');
   const parentSelect = document.getElementById('task-parent');
 
-  // Remplissage des tâches parentes éligibles
   const availableParents = currentTasks.filter(t => t.id !== taskId);
   parentSelect.innerHTML = '<option value="">Aucune (Tâche principale)</option>' + 
     availableParents.map(t => `<option value="${t.id}">${t.nom}</option>`).join('');

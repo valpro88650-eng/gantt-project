@@ -11,14 +11,19 @@
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans">
 
+  <!-- EN-TÊTE -->
   <header class="bg-white shadow p-4 flex justify-between items-center">
     <h1 class="text-xl font-bold text-gray-800">📋 Mon Projet en un Coup d'Œil</h1>
-    <select id="project-select" onchange="loadTasks()" class="border p-2 rounded bg-gray-50">
-      <option value="">Chargement...</option>
-    </select>
+    <div class="flex items-center space-x-2">
+      <select id="project-select" onchange="loadTasks()" class="border p-2 rounded bg-gray-50">
+        <option value="">Chargement...</option>
+      </select>
+      <button onclick="openProjectModal()" class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700 text-sm font-semibold">+ Nouveau projet</button>
+    </div>
   </header>
 
   <div class="max-w-7xl mx-auto mt-6 px-4">
+    <!-- ONGLETS -->
     <div class="flex border-b border-gray-300 mb-6">
       <button onclick="switchTab('list')" id="tab-list" class="py-2 px-4 font-semibold text-blue-600 border-b-2 border-blue-600">📋 Liste</button>
       <button onclick="switchTab('kanban')" id="tab-kanban" class="py-2 px-4 font-semibold text-gray-500 hover:text-blue-600">📊 Kanban</button>
@@ -49,7 +54,7 @@
       </div>
     </div>
 
-    <!-- VUE KANBAN (AVEC DRAG & DROP) -->
+    <!-- VUE KANBAN (DRAG & DROP) -->
     <div id="view-kanban" class="hidden grid grid-cols-1 md:grid-cols-3 gap-4">
       <div class="bg-gray-200 p-4 rounded shadow" ondragover="allowDrop(event)" ondrop="drop(event, 'À faire')">
         <h3 class="font-bold text-gray-700 mb-3">À faire</h3>
@@ -71,7 +76,24 @@
     </div>
   </div>
 
-  <!-- MODALE CRÉATION / ÉDITION -->
+  <!-- MODALE CRÉATION DE PROJET -->
+  <div id="modal-project" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-lg p-6 max-w-sm w-full shadow-lg">
+      <h3 class="text-lg font-bold mb-4">Nouveau projet</h3>
+      <form onsubmit="saveProject(event)" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">Nom du projet</label>
+          <input type="text" id="project-name" required placeholder="Ex: Sculptures 2027" class="w-full border p-2 rounded">
+        </div>
+        <div class="flex justify-end space-x-2 pt-2">
+          <button type="button" onclick="closeProjectModal()" class="px-4 py-2 border rounded">Annuler</button>
+          <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Créer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODALE CRÉATION / ÉDITION DE TÂCHE -->
   <div id="modal-task" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
     <div class="bg-white rounded-lg p-6 max-w-md w-full shadow-lg">
       <h3 id="modal-title" class="text-lg font-bold mb-4">Nouvelle tâche</h3>

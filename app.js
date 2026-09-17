@@ -9,12 +9,52 @@ async function init() {
     loadTasks();
   } else {
     select.innerHTML = `<option value="">Aucun projet disponible</option>`;
+    currentTasks = [];
+    renderList();
+    renderKanban();
+    renderGantt();
   }
 }
 
+// GESTION DES PROJETS
+function openProjectModal() {
+  document.getElementById('project-name').value = '';
+  document.getElementById('modal-project').classList.remove('hidden');
+}
+
+function closeProjectModal() {
+  document.getElementById('modal-project').classList.add('hidden');
+}
+
+async function saveProject(e) {
+  e.preventDefault();
+  const nom = document.getElementById('project-name').value.trim();
+  if (!nom) return;
+
+  const { data, error } = await supabaseClient.from('projets').insert([{ nom }]).select();
+
+  if (error) {
+    alert("Erreur lors de la création du projet : " + error.message);
+  } else {
+    closeProjectModal();
+    await init();
+    if (data && data.length > 0) {
+      document.getElementById('project-select').value = data[0].id;
+      loadTasks();
+    }
+  }
+}
+
+// GESTION DES TÂCHES
 async function loadTasks() {
   const projectId = document.getElementById('project-select').value;
-  if (!projectId) return;
+  if (!projectId) {
+    currentTasks = [];
+    renderList();
+    renderKanban();
+    renderGantt();
+    return;
+  }
 
   const { data: taches } = await supabaseClient.from('taches').select('*').eq('projet_id', projectId);
   currentTasks = taches || [];
@@ -106,8 +146,14 @@ async function drop(ev, newStatus) {
   }
 }
 
-// GESTION MODALE (CRÉATION / ÉDITION)
+// MODALE TÂCHE (CRÉATION / ÉDITION)
 function openModal(taskId = null) {
+  const projectId = document.getElementById('project-select').value;
+  if (!projectId) {
+    alert("Veuillez d'abord créer un projet en cliquant sur '+ Nouveau projet'.");
+    return;
+  }
+
   const modal = document.getElementById('modal-task');
   const btnDelete = document.getElementById('btn-delete');
   const title = document.getElementById('modal-title');

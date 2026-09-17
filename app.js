@@ -1,8 +1,10 @@
-// Récupération sécurisée des identifiants depuis config.js
-const url = typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : (window.SUPABASE_URL || '');
-const key = typeof SUPABASE_KEY !== 'undefined' ? SUPABASE_KEY : (window.SUPABASE_KEY || '');
-
-const supabaseClient = supabase.createClient(url, key);
+// Connexion à Supabase sans conflit de déclaration
+const client = (typeof supabaseClient !== 'undefined')
+  ? supabaseClient
+  : supabase.createClient(
+      typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : window.SUPABASE_URL,
+      typeof SUPABASE_KEY !== 'undefined' ? SUPABASE_KEY : window.SUPABASE_KEY
+    );
 
 // ÉTAT GLOBAL DE L'APPLICATION
 let currentTasks = [];
@@ -18,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadProjects() {
   const select = document.getElementById('project-select');
   
-  const { data: projects, error } = await supabaseClient
+  const { data: projects, error } = await client
     .from('projets')
     .select('*')
     .order('created_at', { ascending: true });
@@ -69,7 +71,7 @@ async function saveProject(e) {
   const nameInput = document.getElementById('project-name').value.trim();
   if (!nameInput) return;
 
-  const { data, error } = await supabaseClient
+  const { data, error } = await client
     .from('projets')
     .insert([{ nom: nameInput }])
     .select();
@@ -96,7 +98,7 @@ async function loadTasks() {
     return;
   }
 
-  const { data: tasks, error } = await supabaseClient
+  const { data: tasks, error } = await client
     .from('taches')
     .select('*')
     .eq('projet_id', projectId)
@@ -343,9 +345,9 @@ async function saveTask(e) {
 
   let error;
   if (taskId) {
-    ({ error } = await supabaseClient.from('taches').update(payload).eq('id', taskId));
+    ({ error } = await client.from('taches').update(payload).eq('id', taskId));
   } else {
-    ({ error } = await supabaseClient.from('taches').insert([payload]));
+    ({ error } = await client.from('taches').insert([payload]));
   }
 
   if (error) {
@@ -361,7 +363,7 @@ async function deleteTask() {
   if (!taskId) return;
 
   if (confirm("Es-tu sûre de vouloir supprimer cette tâche ?")) {
-    const { error } = await supabaseClient.from('taches').delete().eq('id', taskId);
+    const { error } = await client.from('taches').delete().eq('id', taskId);
     if (error) {
       alert("Erreur lors de la suppression : " + error.message);
     } else {

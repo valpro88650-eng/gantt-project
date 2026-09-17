@@ -79,7 +79,6 @@ async function loadProjects() {
       select.appendChild(opt);
     });
 
-    // Garde le projet sélectionné ou prend le premier de la liste
     if (currentProjectId && projects.some(p => p.id === currentProjectId)) {
       select.value = currentProjectId;
     } else {
@@ -100,7 +99,6 @@ function onProjectChange() {
   loadTasks();
 }
 
-// MODALE PROJET (Création ou Édition)
 let isEditingProject = false;
 
 function openProjectModal(isEdit = false) {
@@ -120,7 +118,7 @@ function openProjectModal(isEdit = false) {
     }
     const selectedOption = select.options[select.selectedIndex];
     if (input) input.value = selectedOption ? selectedOption.textContent : '';
-    if (title) title.textContent = "Modifier / Supprimer le projet";
+    if (title) title.textContent = "Modifier le projet";
     if (btnDelete) btnDelete.classList.remove('hidden');
   } else {
     if (input) input.value = '';
@@ -147,14 +145,12 @@ async function saveProject(e) {
   let error, data;
 
   if (isEditingProject && currentProjectId) {
-    // Modification du nom du projet
     ({ data, error } = await sb
       .from('projets')
       .update({ nom: nameInput })
       .eq('id', currentProjectId)
       .select());
   } else {
-    // Création d'un nouveau projet
     ({ data, error } = await sb
       .from('projets')
       .insert([{ nom: nameInput }])
@@ -176,19 +172,13 @@ async function deleteProject() {
   const select = document.getElementById('project-select');
   const projectId = select ? select.value : currentProjectId;
 
-  if (!projectId) {
-    alert("Aucun projet sélectionné à supprimer.");
-    return;
-  }
+  if (!projectId) return;
 
-  if (confirm("Attention : cette action est irréversible. Voulez-vous vraiment supprimer ce projet et toutes ses tâches ?")) {
+  if (confirm("Voulez-vous vraiment supprimer ce projet et toutes ses tâches ?")) {
     const sb = getSupabaseClient();
     if (!sb) return;
 
-    // 1. Supprime les tâches associées
     await sb.from('taches').delete().eq('projet_id', projectId);
-
-    // 2. Supprime le projet
     const { error } = await sb.from('projets').delete().eq('id', projectId);
 
     if (error) {
@@ -360,34 +350,170 @@ function renderListView() {
   });
 }
 
-// --- VUE GANTT ---
-
-let ganttInstance = null;
+// --- VUE GANTT PERSONNALISÉE (Option B) ---
 
 function renderGanttView() {
-  const svg = document.getElementById('gantt-svg');
-  if (!svg) return;
-  svg.innerHTML = '';
+  const treeContainer = document.getElementById('gantt-task-tree');
+  const headerContainer = document.getElementById('gantt-timeline-header');
+  const bodyContainer = document.getElementById('gantt-timeline-body');
 
-  if (currentTasks.length === 0) return;
+  if (!treeContainer || !headerContainer || !bodyContainer) return;
 
-  const formattedTasks = currentTasks.map(t => ({
-    id: t.id,
-    name: t.nom,
-    start: t.date_debut || new Date().toISOString().split('T')[0],
-    end: t.date_fin || new Date().toISOString().split('T')[0],
-    progress: t.avancement || 0,
-    dependencies: t.parent_id ? t.parent_id : ""
-  }));
+  treeContainer.innerHTML = '';
+  headerContainer.innerHTML = '';
+  bodyContainer.innerHTML = '';
 
-  try {
-    ganttInstance = new Gantt("#gantt-svg", formattedTasks, {
-      language: 'fr',
-      view_mode: 'Day',
-      on_click: (task) => openTaskModal(task.id)
+  if (currentTasks.length === 0) {
+    treeContainer.innerHTML = `<div class="p-4 text-xs text-slate-400">Aucune tâche</div>`;
+    bodyContainer.innerHTML = `<div class="p-4 text-xs text-slate-400">Aucune tâche à afficher dans la timeline</div>`;
+    return;
+  }
+
+  // 1. Détermination de la hiérarchie des tâches (Principales / Sous-tâches)
+  const orderedTasks = [];
+  function addChildren(parentId, level) {
+    const children = currentTasks.filter(t => t.parent_id === parentId);
+    children.forEach(c => {
+      orderedTasks.push({ ...c, level });
+      addChildren(c.id, level + 1);
     });
-  } catch (err) {
-    console.error("Erreur de rendu Gantt :", err);
+  }
+
+  const rootTasks = currentTasks.filter(t => !t.parent_id || !currentTasks.some(p => p.id === t.parent_id));
+  rootTasks.forEach(r => {
+    orderedTasks.push({ ...r, level: 0 });
+    addChildren(r.id, 1);
+  });
+
+  // 2. Calcul de la plage de dates du projet
+  let minDate = null;
+  let maxDate = null;
+
+  orderedTasks.forEach(t => {
+    if (t.date_debut) {
+      const d = new Date(t.date_debut);
+      if (!minDate || d < minDate) minDate = d;
+    }
+    if (t.date_fin) {
+      const d = new Date(t.date_fin);
+      if (!maxDate || d > maxDate) maxDate = d;
+    }
+  });
+
+  if (!minDate) minDate = new Date();
+  if (!maxDate) maxDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
+  // Marge de 2 jours avant et 3 jours après
+  const startDate = new Date(minDate);
+  startDate.setDate(startDate.getDate() - 2);
+
+  const endDate = new Date(maxDate);
+  endDate.setDate(endDate.getDate() + 3);
+
+  // Génération des jours de la timeline
+  const days = [];
+  let current = new Date(startDate);
+  while (current <= endDate) {
+    days.push(new Date(current));
+    current.setDate(current.getDate() + 1);
+  }
+
+  const DAY_WIDTH = 50; // Largeur en px par jour
+
+  // 3. Rendu de l'en-tête de la timeline
+  headerContainer.style.width = `${days.length * DAY_WIDTH}px`;
+  days.forEach(d => {
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const dayDiv = document.createElement('div');
+    dayDiv.style.width = `${DAY_WIDTH}px`;
+    dayDiv.className = `shrink-0 border-r border-slate-200 flex flex-col justify-center items-center py-1 text-[11px] ${isWeekend ? 'bg-slate-200/50 text-slate-400' : 'text-slate-600'}`;
+    
+    const dayName = d.toLocaleDateString('fr-FR', { weekday: 'narrow' });
+    const dayNum = d.getDate();
+    const monthName = d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '');
+
+    dayDiv.innerHTML = `
+      <span class="text-[9px] uppercase font-normal">${dayName}</span>
+      <span class="font-bold">${dayNum}</span>
+      <span class="text-[9px] text-slate-400">${monthName}</span>
+    `;
+    headerContainer.appendChild(dayDiv);
+  });
+
+  // 4. Rendu des lignes (Arborescence à gauche & Timeline à droite)
+  bodyContainer.style.width = `${days.length * DAY_WIDTH}px`;
+
+  orderedTasks.forEach(task => {
+    // --- COLONNE FIXE (GAUCHE) ---
+    const treeRow = document.createElement('div');
+    treeRow.className = "h-12 flex items-center px-3 text-xs font-medium text-slate-800 hover:bg-slate-50 cursor-pointer border-b border-slate-100 transition";
+    treeRow.onclick = () => openTaskModal(task.id);
+
+    const indent = task.level * 18;
+    const prefix = task.level > 0 ? `<span class="text-blue-500 font-bold mr-1">↳</span>` : `<span class="mr-1">📌</span>`;
+
+    treeRow.style.paddingLeft = `${12 + indent}px`;
+    treeRow.innerHTML = `
+      ${prefix}
+      <span class="truncate" title="${task.nom}">${task.nom}</span>
+    `;
+    treeContainer.appendChild(treeRow);
+
+    // --- TIMELINE (DROITE) ---
+    const timeRow = document.createElement('div');
+    timeRow.className = "h-12 relative flex items-center border-b border-slate-100 hover:bg-slate-50/80 transition";
+    timeRow.style.width = `${days.length * DAY_WIDTH}px`;
+
+    // Quadrillage de fond (week-ends)
+    days.forEach((d, i) => {
+      const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+      if (isWeekend) {
+        const bgGrid = document.createElement('div');
+        bgGrid.style.left = `${i * DAY_WIDTH}px`;
+        bgGrid.style.width = `${DAY_WIDTH}px`;
+        bgGrid.className = "absolute top-0 bottom-0 bg-slate-100/40 border-r border-slate-200/40 pointer-events-none";
+        timeRow.appendChild(bgGrid);
+      }
+    });
+
+    // Barre de la tâche
+    if (task.date_debut && task.date_fin) {
+      const taskStart = new Date(task.date_debut);
+      const taskEnd = new Date(task.date_fin);
+
+      const offsetDays = Math.max(0, Math.round((taskStart - startDate) / (1000 * 60 * 60 * 24)));
+      const durationDays = Math.max(1, Math.round((taskEnd - taskStart) / (1000 * 60 * 60 * 24)) + 1);
+
+      const leftPos = offsetDays * DAY_WIDTH;
+      const barWidth = durationDays * DAY_WIDTH;
+
+      const bar = document.createElement('div');
+      bar.className = `absolute h-7 rounded-lg px-2 text-[11px] font-semibold text-white flex items-center justify-between shadow-sm cursor-pointer transition hover:brightness-110 ${getBarColorClass(task.statut)}`;
+      bar.style.left = `${leftPos}px`;
+      bar.style.width = `${barWidth}px`;
+      bar.onclick = () => openTaskModal(task.id);
+
+      // Affichage des dates initiales dans la barre
+      bar.innerHTML = `
+        <span class="truncate">${formatDate(task.date_debut)} → ${formatDate(task.date_fin)}</span>
+        <span class="text-[9px] bg-black/20 px-1 rounded ml-1">${task.avancement || 0}%</span>
+      `;
+
+      timeRow.appendChild(bar);
+    }
+
+    bodyContainer.appendChild(timeRow);
+  });
+}
+
+function getBarColorClass(statut) {
+  switch (statut) {
+    case 'En cours':
+      return 'bg-blue-600';
+    case 'Terminé':
+      return 'bg-green-600';
+    default:
+      return 'bg-slate-600';
   }
 }
 

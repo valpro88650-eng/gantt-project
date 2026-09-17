@@ -1,16 +1,15 @@
 // Variable globale pour le client Supabase
 let client = null;
+let currentProjectId = null;
 
 function getSupabaseClient() {
   if (client) return client;
 
-  // 1. Si config.js a déjà créé l'instance
   if (typeof supabaseClient !== 'undefined' && supabaseClient) {
     client = supabaseClient;
     return client;
   }
 
-  // 2. Récupération des clés depuis config.js
   const url = (typeof SUPABASE_URL !== 'undefined') ? SUPABASE_URL : window.SUPABASE_URL;
   const key = (typeof SUPABASE_KEY !== 'undefined') ? SUPABASE_KEY : window.SUPABASE_KEY;
 
@@ -33,7 +32,6 @@ let currentTasks = [];
 let currentTab = 'kanban';
 
 // INITIALISATION SÉCURISÉE
-// Si le DOM est déjà prêt, on lance immédiatement au lieu d'attendre l'événement
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', loadProjects);
 } else {
@@ -68,6 +66,7 @@ async function loadProjects() {
 
     if (!projects || projects.length === 0) {
       select.innerHTML = '<option value="">Aucun projet — Cliquez sur + Nouveau</option>';
+      currentProjectId = null;
       currentTasks = [];
       renderAllViews();
       return;
@@ -80,8 +79,13 @@ async function loadProjects() {
       select.appendChild(opt);
     });
 
-    // Sélectionne automatiquement le premier projet
-    select.value = projects[0].id;
+    // Garde le projet sélectionné ou prend le premier
+    if (currentProjectId && projects.some(p => p.id === currentProjectId)) {
+      select.value = currentProjectId;
+    } else {
+      select.value = projects[0].id;
+      currentProjectId = projects[0].id;
+    }
 
     loadTasks();
   } catch (err) {
@@ -91,16 +95,45 @@ async function loadProjects() {
 }
 
 function onProjectChange() {
+  const select = document.getElementById('project-select');
+  currentProjectId = select.value;
   loadTasks();
 }
 
-function openProjectModal() {
-  document.getElementById('project-name').value = '';
-  document.getElementById('modal-project').classList.remove('hidden');
+// MODALE PROJET (Création ou Édition)
+let isEditingProject = false;
+
+function openProjectModal(isEdit = false) {
+  isEditingProject = isEdit;
+  const modal = document.getElementById('modal-project');
+  const input = document.getElementById('project-name');
+  const title = document.getElementById('modal-project-title');
+  const btnDelete = document.getElementById('btn-delete-project');
+
+  if (!modal) return;
+
+  if (isEdit) {
+    const select = document.getElementById('project-select');
+    if (!select.value) {
+      alert("Aucun projet sélectionné à modifier.");
+      return;
+    }
+    const selectedOption = select.options[select.selectedIndex];
+    if (input) input.value = selectedOption ? selectedOption.textContent : '';
+    if (title) title.textContent = "Modifier le nom du projet";
+    if (btnDelete) btnDelete.classList.remove('hidden');
+  } else {
+    if (input) input.value = '';
+    if (title) title.textContent = "Nouveau projet";
+    if (btnDelete) btnDelete.classList.add('hidden');
+  }
+
+  modal.classList.remove('hidden');
 }
 
 function closeProjectModal() {
-  document.getElementById('modal-project').classList.add('hidden');
+  const modal = document.getElementById('modal-project');
+  if (modal) modal.classList.add('hidden');
 }
 
 async function saveProject(e) {
@@ -111,19 +144,53 @@ async function saveProject(e) {
   const sb = getSupabaseClient();
   if (!sb) return;
 
-  const { data, error } = await sb
-    .from('projets')
-    .insert([{ nom: nameInput }])
-    .select();
+  let error, data;
+
+  if (isEditingProject && currentProjectId) {
+    // Modification du projet existant
+    ({ data, error } = await sb
+      .from('projets')
+      .update({ nom: nameInput })
+      .eq('id', currentProjectId)
+      .select());
+  } else {
+    // Création d'un nouveau projet
+    ({ data, error } = await sb
+      .from('projets')
+      .insert([{ nom: nameInput }])
+      .select());
+  }
 
   if (error) {
-    alert("Erreur lors de la création du projet : " + error.message);
+    alert("Erreur enregistrement projet : " + error.message);
   } else {
     closeProjectModal();
-    await loadProjects();
     if (data && data.length > 0) {
-      document.getElementById('project-select').value = data[0].id;
-      loadTasks();
+      currentProjectId = data[0].id;
+    }
+    await loadProjects();
+  }
+}
+
+async function deleteProject() {
+  const select = document.getElementById('project-select');
+  const projectId = select.value;
+  if (!projectId) return;
+
+  if (confirm("Attention : supprimer ce projet supprimera également toutes ses tâches. Continuer ?")) {
+    const sb = getSupabaseClient();
+    if (!sb) return;
+
+    // Supprime d'abord les tâches liées puis le projet
+    await sb.from('taches').delete().eq('projet_id', projectId);
+    const { error } = await sb.from('projets').delete().eq('id', projectId);
+
+    if (error) {
+      alert("Erreur lors de la suppression : " + error.message);
+    } else {
+      currentProjectId = null;
+      closeProjectModal();
+      await loadProjects();
     }
   }
 }
@@ -149,7 +216,6 @@ async function loadTasks() {
 
   if (error) {
     console.error("Erreur chargement tâches :", error);
-    alert("Erreur lors du chargement des tâches : " + error.message);
     return;
   }
 
@@ -172,6 +238,8 @@ function switchTab(tab) {
   views.forEach(v => {
     const el = document.getElementById(`view-${v}`);
     const btn = document.getElementById(`tab-${v}-btn`);
+    if (!el || !btn) return;
+
     if (v === tab) {
       el.classList.remove('hidden');
       btn.className = "pb-3 text-sm font-semibold border-b-2 border-blue-600 text-blue-600";
@@ -192,6 +260,8 @@ function renderKanbanView() {
   const colTodo = document.getElementById('col-todo');
   const colDoing = document.getElementById('col-doing');
   const colDone = document.getElementById('col-done');
+
+  if (!colTodo || !colDoing || !colDone) return;
 
   colTodo.innerHTML = '';
   colDoing.innerHTML = '';
@@ -242,6 +312,7 @@ function renderKanbanView() {
 
 function renderListView() {
   const tbody = document.getElementById('list-table-body');
+  if (!tbody) return;
   tbody.innerHTML = '';
 
   if (currentTasks.length === 0) {
@@ -289,11 +360,10 @@ let ganttInstance = null;
 
 function renderGanttView() {
   const svg = document.getElementById('gantt-svg');
+  if (!svg) return;
   svg.innerHTML = '';
 
-  if (currentTasks.length === 0) {
-    return;
-  }
+  if (currentTasks.length === 0) return;
 
   const formattedTasks = currentTasks.map(t => ({
     id: t.id,

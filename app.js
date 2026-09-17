@@ -79,7 +79,7 @@ async function loadProjects() {
       select.appendChild(opt);
     });
 
-    // Garde le projet sélectionné ou prend le premier
+    // Garde le projet sélectionné ou prend le premier de la liste
     if (currentProjectId && projects.some(p => p.id === currentProjectId)) {
       select.value = currentProjectId;
     } else {
@@ -114,13 +114,13 @@ function openProjectModal(isEdit = false) {
 
   if (isEdit) {
     const select = document.getElementById('project-select');
-    if (!select.value) {
+    if (!select || !select.value) {
       alert("Aucun projet sélectionné à modifier.");
       return;
     }
     const selectedOption = select.options[select.selectedIndex];
     if (input) input.value = selectedOption ? selectedOption.textContent : '';
-    if (title) title.textContent = "Modifier le nom du projet";
+    if (title) title.textContent = "Modifier / Supprimer le projet";
     if (btnDelete) btnDelete.classList.remove('hidden');
   } else {
     if (input) input.value = '';
@@ -147,7 +147,7 @@ async function saveProject(e) {
   let error, data;
 
   if (isEditingProject && currentProjectId) {
-    // Modification du projet existant
+    // Modification du nom du projet
     ({ data, error } = await sb
       .from('projets')
       .update({ nom: nameInput })
@@ -174,19 +174,25 @@ async function saveProject(e) {
 
 async function deleteProject() {
   const select = document.getElementById('project-select');
-  const projectId = select.value;
-  if (!projectId) return;
+  const projectId = select ? select.value : currentProjectId;
 
-  if (confirm("Attention : supprimer ce projet supprimera également toutes ses tâches. Continuer ?")) {
+  if (!projectId) {
+    alert("Aucun projet sélectionné à supprimer.");
+    return;
+  }
+
+  if (confirm("Attention : cette action est irréversible. Voulez-vous vraiment supprimer ce projet et toutes ses tâches ?")) {
     const sb = getSupabaseClient();
     if (!sb) return;
 
-    // Supprime d'abord les tâches liées puis le projet
+    // 1. Supprime les tâches associées
     await sb.from('taches').delete().eq('projet_id', projectId);
+
+    // 2. Supprime le projet
     const { error } = await sb.from('projets').delete().eq('id', projectId);
 
     if (error) {
-      alert("Erreur lors de la suppression : " + error.message);
+      alert("Erreur lors de la suppression du projet : " + error.message);
     } else {
       currentProjectId = null;
       closeProjectModal();
